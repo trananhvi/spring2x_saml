@@ -17,14 +17,17 @@ import org.opensaml.saml.saml2.core.impl.SubjectBuilder;
 import org.opensaml.saml.saml2.core.impl.NameIDBuilder;
 import org.opensaml.saml.saml2.core.NameIDType;
 import javax.xml.namespace.QName;
-
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
 /**
  * Custom SAML Authentication Request Factory that adds Okta-specific login_hint
  * as a query parameter and/or extension to the SAML AuthnRequest
  */
 public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthenticationRequestFactory {
 
-    private static final String HARDCODED_EMAIL = "vianh.tran@verintidhydraint.com";
+    private static final String DEFAULT_EMAIL = "default.user@example.com";
 
     public VerintLoginHintAuthenticationRequestFactory() {
         super();
@@ -41,15 +44,15 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
             Saml2AuthenticationRequestContext context) {
         // Let the superclass create the basic request first
         Saml2RedirectAuthenticationRequest request = super.createRedirectAuthenticationRequest(context);
-
+        String loginHintEmail = getLoginHintFromSession(context);
         // Get the destination URL and add login_hint parameter
         String destination = request.getAuthenticationRequestUri();
         if (destination != null) {
             String modifiedDestination;
             if (destination.contains("?")) {
-                modifiedDestination = destination + "&login_hint=" + HARDCODED_EMAIL;
+                modifiedDestination = destination + "&login_hint=" + loginHintEmail;
             } else {
-                modifiedDestination = destination + "?login_hint=" + HARDCODED_EMAIL;
+                modifiedDestination = destination + "?login_hint=" + loginHintEmail;
             }
 
             // Create a new builder with the modified destination
@@ -82,6 +85,27 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
             Saml2AuthenticationRequestContext context) {
         return super.createPostAuthenticationRequest(context);
     }
+    /**
+     * Helper method to get the login hint email from the session
+     */
+    private String getLoginHintFromSession(Saml2AuthenticationRequestContext context) {
+        try {
+            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
+            HttpSession session = request.getSession(false);
+
+            if (session != null) {
+                String email = (String) session.getAttribute("login_hint_email");
+                if (email != null && !email.isEmpty()) {
+                    return email;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error getting login hint from session: " + e.getMessage());
+        }
+
+        // Return default email if session attribute is not available
+        return DEFAULT_EMAIL;
+    }
 
     /**
      * Custom converter that adds Okta login_hint extension to the SAML AuthnRequest
@@ -94,6 +118,7 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
             AuthnRequest authnRequest = createDefaultAuthnRequest(context);
 
             try {
+                String loginHintEmail = getLoginHintFromSession(context);
                 // Add login_hint as extension element (for Okta)
                 if (authnRequest.getExtensions() == null) {
                     ExtensionsBuilder extensionsBuilder = new ExtensionsBuilder();
@@ -106,7 +131,7 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
                 XSStringBuilder stringBuilder = (XSStringBuilder) XMLObjectProviderRegistrySupport.getBuilderFactory()
                         .getBuilder(XSString.TYPE_NAME);
                 XSString loginHint = stringBuilder.buildObject(loginHintQName, XSString.TYPE_NAME);
-                loginHint.setValue(HARDCODED_EMAIL);
+                loginHint.setValue(loginHintEmail);
 
                 // Add the extension to the AuthnRequest
                 authnRequest.getExtensions().getUnknownXMLObjects().add(loginHint);
@@ -120,7 +145,7 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
                     // Create a NameID element
                     NameIDBuilder nameIDBuilder = new NameIDBuilder();
                     NameID nameID = nameIDBuilder.buildObject();
-                    nameID.setValue(HARDCODED_EMAIL);
+                    nameID.setValue(loginHintEmail);
                     nameID.setFormat(NameIDType.EMAIL);
 
                     // Add the NameID to the Subject
@@ -133,11 +158,11 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
                     if (authnRequest.getSubject().getNameID() == null) {
                         NameIDBuilder nameIDBuilder = new NameIDBuilder();
                         NameID nameID = nameIDBuilder.buildObject();
-                        nameID.setValue(HARDCODED_EMAIL);
+                        nameID.setValue(loginHintEmail);
                         nameID.setFormat(NameIDType.EMAIL);
                         authnRequest.getSubject().setNameID(nameID);
                     } else {
-                        authnRequest.getSubject().getNameID().setValue(HARDCODED_EMAIL);
+                        authnRequest.getSubject().getNameID().setValue(loginHintEmail);
                         authnRequest.getSubject().getNameID().setFormat(NameIDType.EMAIL);
                     }
                 }
@@ -146,9 +171,9 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
                 String destination = authnRequest.getDestination();
                 if (destination != null) {
                     if (destination.contains("?")) {
-                        authnRequest.setDestination(destination + "&login_hint=" + HARDCODED_EMAIL);
+                        authnRequest.setDestination(destination + "&login_hint=" + loginHintEmail);
                     } else {
-                        authnRequest.setDestination(destination + "?login_hint=" + HARDCODED_EMAIL);
+                        authnRequest.setDestination(destination + "?login_hint=" + loginHintEmail);
                     }
                 }
             } catch (Exception e) {
