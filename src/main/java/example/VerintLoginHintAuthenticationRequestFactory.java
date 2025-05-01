@@ -11,18 +11,22 @@ import org.springframework.security.saml2.provider.service.authentication.OpenSa
 import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticationRequestContext;
 import org.springframework.security.saml2.provider.service.authentication.Saml2RedirectAuthenticationRequest;
 import org.springframework.security.saml2.provider.service.authentication.Saml2PostAuthenticationRequest;
-
+import org.opensaml.saml.saml2.core.Subject;
+import org.opensaml.saml.saml2.core.NameID;
+import org.opensaml.saml.saml2.core.impl.SubjectBuilder;
+import org.opensaml.saml.saml2.core.impl.NameIDBuilder;
+import org.opensaml.saml.saml2.core.NameIDType;
 import javax.xml.namespace.QName;
 
 /**
  * Custom SAML Authentication Request Factory that adds Okta-specific login_hint
  * as a query parameter and/or extension to the SAML AuthnRequest
  */
-public class OktaLoginHintAuthenticationRequestFactory extends OpenSamlAuthenticationRequestFactory {
+public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthenticationRequestFactory {
 
-    private static final String HARDCODED_EMAIL = "hardcoded.user@example.com";
+    private static final String HARDCODED_EMAIL = "vianh.tran@verintidhydraint.com";
 
-    public OktaLoginHintAuthenticationRequestFactory() {
+    public VerintLoginHintAuthenticationRequestFactory() {
         super();
         // Override the default converter to use our custom converter that adds login_hint
         setAuthenticationRequestContextConverter(new OktaLoginHintAuthnRequestConverter());
@@ -90,7 +94,7 @@ public class OktaLoginHintAuthenticationRequestFactory extends OpenSamlAuthentic
             AuthnRequest authnRequest = createDefaultAuthnRequest(context);
 
             try {
-                // Add login_hint as extension element
+                // Add login_hint as extension element (for Okta)
                 if (authnRequest.getExtensions() == null) {
                     ExtensionsBuilder extensionsBuilder = new ExtensionsBuilder();
                     Extensions extensions = extensionsBuilder.buildObject();
@@ -107,7 +111,38 @@ public class OktaLoginHintAuthenticationRequestFactory extends OpenSamlAuthentic
                 // Add the extension to the AuthnRequest
                 authnRequest.getExtensions().getUnknownXMLObjects().add(loginHint);
 
-                // Modify destination to include login_hint query parameter (redundant but ensures it gets through)
+                // Add login_hint as Subject NameID (for Auth0 and other IdPs)
+                if (authnRequest.getSubject() == null) {
+                    // Create a Subject if it doesn't exist
+                    SubjectBuilder subjectBuilder = new SubjectBuilder();
+                    Subject subject = subjectBuilder.buildObject();
+
+                    // Create a NameID element
+                    NameIDBuilder nameIDBuilder = new NameIDBuilder();
+                    NameID nameID = nameIDBuilder.buildObject();
+                    nameID.setValue(HARDCODED_EMAIL);
+                    nameID.setFormat(NameIDType.EMAIL);
+
+                    // Add the NameID to the Subject
+                    subject.setNameID(nameID);
+
+                    // Add the Subject to the AuthnRequest
+                    authnRequest.setSubject(subject);
+                } else {
+                    // If Subject already exists, just update the NameID
+                    if (authnRequest.getSubject().getNameID() == null) {
+                        NameIDBuilder nameIDBuilder = new NameIDBuilder();
+                        NameID nameID = nameIDBuilder.buildObject();
+                        nameID.setValue(HARDCODED_EMAIL);
+                        nameID.setFormat(NameIDType.EMAIL);
+                        authnRequest.getSubject().setNameID(nameID);
+                    } else {
+                        authnRequest.getSubject().getNameID().setValue(HARDCODED_EMAIL);
+                        authnRequest.getSubject().getNameID().setFormat(NameIDType.EMAIL);
+                    }
+                }
+
+                // Modify destination to include login_hint query parameter
                 String destination = authnRequest.getDestination();
                 if (destination != null) {
                     if (destination.contains("?")) {
