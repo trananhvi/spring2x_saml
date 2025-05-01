@@ -13,6 +13,7 @@ import org.springframework.security.saml2.provider.service.registration.RelyingP
 import org.springframework.security.saml2.provider.service.servlet.filter.Saml2WebSsoAuthenticationFilter;
 import org.springframework.security.saml2.provider.service.web.DefaultRelyingPartyRegistrationResolver;
 import org.springframework.security.saml2.provider.service.web.Saml2MetadataFilter;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -25,19 +26,30 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Override
     protected void configure(HttpSecurity http) throws Exception {
         // This will enable the metadata endpoint
-        Converter<HttpServletRequest, RelyingPartyRegistration> relyingPartyRegistrationResolver = new DefaultRelyingPartyRegistrationResolver(this.relyingPartyRegistrationRepository);
+        Converter<HttpServletRequest, RelyingPartyRegistration> relyingPartyRegistrationResolver =
+                new DefaultRelyingPartyRegistrationResolver(this.relyingPartyRegistrationRepository);
 
-        Saml2MetadataFilter filter = new Saml2MetadataFilter(relyingPartyRegistrationResolver, new OpenSamlMetadataResolver());
+        Saml2MetadataFilter filter = new Saml2MetadataFilter(
+                relyingPartyRegistrationResolver, new OpenSamlMetadataResolver());
 
         // Add the filter before the SAML filter
         http.addFilterBefore(filter, Saml2WebSsoAuthenticationFilter.class);
 
-        // Configure SAML2 login with our custom factory
-        http.saml2Login(Customizer.withDefaults());
-
-        // Configure authorization
-        http.antMatcher("/**")
+        // Allow access to login and processing endpoints - without context path
+        http
                 .authorizeRequests()
-                .antMatchers("/**").authenticated();
+                .antMatchers("/login", "/process-email", "/css/**", "/js/**").permitAll()
+                .anyRequest().authenticated()
+                .and()
+                .csrf()
+                .ignoringAntMatchers("/process-email");
+
+        // Configure custom entry point to redirect to our login page
+        http
+                .exceptionHandling()
+                .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login"));
+
+        // Configure SAML2 login using default configuration
+        http.saml2Login(Customizer.withDefaults());
     }
 }
