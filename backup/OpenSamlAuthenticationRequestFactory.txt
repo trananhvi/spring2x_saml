@@ -1,0 +1,165 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package org.springframework.security.saml2.provider.service.authentication;
+
+import java.nio.charset.StandardCharsets;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import net.shibboleth.utilities.java.support.resolver.CriteriaSet;
+import net.shibboleth.utilities.java.support.xml.SerializeSupport;
+import org.joda.time.DateTime;
+import org.opensaml.core.config.ConfigurationService;
+import org.opensaml.core.xml.config.XMLObjectProviderRegistry;
+import org.opensaml.saml.saml2.core.AuthnRequest;
+import org.opensaml.saml.saml2.core.Issuer;
+import org.opensaml.saml.saml2.core.impl.AuthnRequestBuilder;
+import org.opensaml.saml.saml2.core.impl.AuthnRequestMarshaller;
+import org.opensaml.saml.saml2.core.impl.IssuerBuilder;
+import org.opensaml.saml.security.impl.SAMLMetadataSignatureSigningParametersResolver;
+import org.opensaml.security.credential.BasicCredential;
+import org.opensaml.security.credential.Credential;
+import org.opensaml.security.credential.CredentialSupport;
+import org.opensaml.security.credential.UsageType;
+import org.opensaml.xmlsec.SignatureSigningConfiguration;
+import org.opensaml.xmlsec.SignatureSigningParameters;
+import org.opensaml.xmlsec.SignatureSigningParametersResolver;
+import org.opensaml.xmlsec.criterion.SignatureSigningConfigurationCriterion;
+import org.opensaml.xmlsec.impl.BasicSignatureSigningConfiguration;
+import org.opensaml.xmlsec.signature.support.SignatureSupport;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.saml2.core.OpenSamlInitializationService;
+import org.springframework.security.saml2.credentials.Saml2X509Credential;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
+import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.w3c.dom.Element;
+
+public class OpenSamlAuthenticationRequestFactory implements Saml2AuthenticationRequestFactory {
+    private Clock clock = Clock.systemUTC();
+    private AuthnRequestMarshaller marshaller;
+    private AuthnRequestBuilder authnRequestBuilder;
+    private IssuerBuilder issuerBuilder;
+    private Converter<Saml2AuthenticationRequestContext, String> protocolBindingResolver = (context) -> context == null ? "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" : context.getRelyingPartyRegistration().getAssertionConsumerServiceBinding().getUrn();
+    private Converter<Saml2AuthenticationRequestContext, AuthnRequest> authenticationRequestContextConverter = this::createAuthnRequest;
+
+    public OpenSamlAuthenticationRequestFactory() {
+        XMLObjectProviderRegistry registry = (XMLObjectProviderRegistry)ConfigurationService.get(XMLObjectProviderRegistry.class);
+        this.marshaller = (AuthnRequestMarshaller)registry.getMarshallerFactory().getMarshaller(AuthnRequest.DEFAULT_ELEMENT_NAME);
+        this.authnRequestBuilder = (AuthnRequestBuilder)registry.getBuilderFactory().getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
+        this.issuerBuilder = (IssuerBuilder)registry.getBuilderFactory().getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
+    }
+
+    /** @deprecated */
+    @Deprecated
+    public String createAuthenticationRequest(Saml2AuthenticationRequest request) {
+        AuthnRequest authnRequest = this.createAuthnRequest(request.getIssuer(), request.getDestination(), request.getAssertionConsumerServiceUrl(), (String)this.protocolBindingResolver.convert((Object)null));
+
+        for(Saml2X509Credential credential : request.getCredentials()) {
+            if (credential.isSigningCredential()) {
+                X509Certificate certificate = credential.getCertificate();
+                PrivateKey privateKey = credential.getPrivateKey();
+                BasicCredential cred = CredentialSupport.getSimpleCredential(certificate, privateKey);
+                cred.setEntityId(request.getIssuer());
+                cred.setUsageType(UsageType.SIGNING);
+                SignatureSigningParameters parameters = new SignatureSigningParameters();
+                parameters.setSigningCredential(cred);
+                parameters.setSignatureAlgorithm("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256");
+                parameters.setSignatureReferenceDigestMethod("http://www.w3.org/2001/04/xmlenc#sha256");
+                parameters.setSignatureCanonicalizationAlgorithm("http://www.w3.org/2001/10/xml-exc-c14n#");
+                return this.serialize(this.sign(authnRequest, parameters));
+            }
+        }
+
+        throw new IllegalArgumentException("No signing credential provided");
+    }
+
+    public Saml2PostAuthenticationRequest createPostAuthenticationRequest(Saml2AuthenticationRequestContext context) {
+        AuthnRequest authnRequest = (AuthnRequest)this.authenticationRequestContextConverter.convert(context);
+        String xml = context.getRelyingPartyRegistration().getAssertingPartyDetails().getWantAuthnRequestsSigned() ? this.serialize(this.sign(authnRequest, context.getRelyingPartyRegistration())) : this.serialize(authnRequest);
+        return ((Saml2PostAuthenticationRequest.Builder)Saml2PostAuthenticationRequest.withAuthenticationRequestContext(context).samlRequest(Saml2Utils.samlEncode(xml.getBytes(StandardCharsets.UTF_8)))).build();
+    }
+
+    public Saml2RedirectAuthenticationRequest createRedirectAuthenticationRequest(Saml2AuthenticationRequestContext context) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private AuthnRequest createAuthnRequest(Saml2AuthenticationRequestContext context) {
+        return this.createAuthnRequest(context.getIssuer(), context.getDestination(), context.getAssertionConsumerServiceUrl(), (String)this.protocolBindingResolver.convert(context));
+    }
+
+    private AuthnRequest createAuthnRequest(String issuer, String destination, String assertionConsumerServiceUrl, String protocolBinding) {
+        AuthnRequest auth = this.authnRequestBuilder.buildObject();
+        auth.setID("ARQ" + UUID.randomUUID().toString().substring(1));
+        auth.setIssueInstant(new DateTime(this.clock.millis()));
+        auth.setForceAuthn(Boolean.FALSE);
+        auth.setIsPassive(Boolean.FALSE);
+        auth.setProtocolBinding(protocolBinding);
+        Issuer iss = this.issuerBuilder.buildObject();
+        iss.setValue(issuer);
+        auth.setIssuer(iss);
+        auth.setDestination(destination);
+        auth.setAssertionConsumerServiceURL(assertionConsumerServiceUrl);
+        return auth;
+    }
+
+    public void setAuthenticationRequestContextConverter(Converter<Saml2AuthenticationRequestContext, AuthnRequest> authenticationRequestContextConverter) {
+        Assert.notNull(authenticationRequestContextConverter, "authenticationRequestContextConverter cannot be null");
+        this.authenticationRequestContextConverter = authenticationRequestContextConverter;
+    }
+
+    public void setClock(Clock clock) {
+        Assert.notNull(clock, "clock cannot be null");
+        this.clock = clock;
+    }
+
+    /** @deprecated */
+    @Deprecated
+    public void setProtocolBinding(String protocolBinding) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private AuthnRequest sign(AuthnRequest authnRequest, RelyingPartyRegistration relyingPartyRegistration) {
+        SignatureSigningParameters parameters = this.resolveSigningParameters(relyingPartyRegistration);
+        return this.sign(authnRequest, parameters);
+    }
+
+    private AuthnRequest sign(AuthnRequest authnRequest, SignatureSigningParameters parameters) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private void sign(Map<String, String> components, RelyingPartyRegistration relyingPartyRegistration) {
+        SignatureSigningParameters parameters = this.resolveSigningParameters(relyingPartyRegistration);
+        this.sign(components, parameters);
+    }
+
+    private void sign(Map<String, String> components, SignatureSigningParameters parameters) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private String serialize(AuthnRequest authnRequest) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private SignatureSigningParameters resolveSigningParameters(RelyingPartyRegistration relyingPartyRegistration) {
+        // $FF: Couldn't be decompiled
+    }
+
+    private List<Credential> resolveSigningCredentials(RelyingPartyRegistration relyingPartyRegistration) {
+        // $FF: Couldn't be decompiled
+    }
+
+    static {
+        OpenSamlInitializationService.initialize();
+    }
+}

@@ -1,0 +1,25 @@
+@Controller
+public class SamlLoginRedirectController {
+
+    @Autowired
+    private RelyingPartyRegistrationRepository registrations;
+
+    @GetMapping("/saml_login")
+    public RedirectView redirectWithLoginHint() {
+        RelyingPartyRegistration registration = registrations.findByRegistrationId("okta");
+
+        Saml2AuthenticationRequestContext context = Saml2AuthenticationRequestContext.builder()
+                .issuer(registration.getEntityId())
+                .relyingPartyRegistration(registration)
+                .assertionConsumerServiceUrl(registration.getAssertionConsumerServiceLocation())
+                .relayState("login_hint=messi@vitran.com")
+                .build();
+
+        // Use your custom factory
+        OktaLoginHintAuthenticationRequestFactory factory = new OktaLoginHintAuthenticationRequestFactory();
+        Saml2RedirectAuthenticationRequest redirectRequest =
+                (Saml2RedirectAuthenticationRequest) factory.createRedirectAuthenticationRequest(context);
+
+        return new RedirectView(redirectRequest.getAuthenticationRequestUri());
+    }
+}

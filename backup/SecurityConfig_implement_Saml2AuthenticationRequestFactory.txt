@@ -1,0 +1,119 @@
+package example;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.saml2.provider.service.metadata.OpenSamlMetadataResolver;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
+import org.springframework.security.saml2.provider.service.servlet.filter.Saml2WebSsoAuthenticationFilter;
+import org.springframework.security.saml2.provider.service.web.DefaultRelyingPartyRegistrationResolver;
+import org.springframework.security.saml2.provider.service.web.Saml2MetadataFilter;
+import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticationRequestFactory;
+import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticationRequestContext;
+import org.springframework.security.saml2.core.Saml2MessageBinding;
+import org.springframework.security.saml2.core.Saml2ParameterNames;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.springframework.security.config.Customizer.withDefaults;
+
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    RelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
+
+    private static final String HARDCODED_EMAIL = "hardcoded.user@example.com";
+
+    /**
+     * Define a custom SAML authentication request factory bean
+     */
+    @Bean
+    public Saml2AuthenticationRequestFactory saml2AuthenticationRequestFactory() {
+        return new OktaLoginHintAuthenticationRequestFactory();
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        // This will enable the metadata endpoint
+        Converter<HttpServletRequest, RelyingPartyRegistration> relyingPartyRegistrationResolver =
+                new DefaultRelyingPartyRegistrationResolver(this.relyingPartyRegistrationRepository);
+
+        Saml2MetadataFilter filter = new Saml2MetadataFilter(
+                relyingPartyRegistrationResolver,
+                new OpenSamlMetadataResolver());
+
+        http
+                .saml2Login(saml2 ->
+                    saml2.authenticationRequestFactory(saml2AuthenticationRequestFactory())
+                )
+                .addFilterBefore(filter, Saml2WebSsoAuthenticationFilter.class)
+                .antMatcher("/**")
+                .authorizeRequests()
+                .antMatchers("/**").authenticated();
+    }
+
+    /**
+     * Custom implementation of Saml2AuthenticationRequestFactory that adds login_hint
+     * This approach uses Spring Security's interfaces rather than extending OpenSaml classes
+     */
+    public static class OktaLoginHintAuthenticationRequestFactory implements Saml2AuthenticationRequestFactory {
+
+        @Override
+        public String createAuthenticationRequest(Saml2AuthenticationRequestContext context) {
+            // Create a map to hold all parameters needed for the SAML request
+            Map<String, String> parameters = new HashMap<>();
+
+            // Add standard SAML parameters
+            parameters.put(Saml2ParameterNames.SAML_REQUEST, buildSamlRequest(context));
+            parameters.put(Saml2ParameterNames.RELAY_STATE, context.getRelayState());
+
+            // Return the URL or the serialized request depending on the binding
+            if (context.getRelyingPartyRegistration().getAssertingPartyDetails().getSingleSignOnServiceBinding()
+                    == Saml2MessageBinding.REDIRECT) {
+                return buildRedirectUrl(context, parameters);
+            }
+
+            return buildPostFormData(parameters);
+        }
+
+        private String buildSamlRequest(Saml2AuthenticationRequestContext context) {
+            // Here you would build the SAML request
+            // For simplicity, we're returning a placeholder
+            // In a real application, you would use OpenSAML libraries to build the XML
+            return "saml_request_placeholder";
+        }
+
+        private String buildRedirectUrl(Saml2AuthenticationRequestContext context, Map<String, String> parameters) {
+            // Get the base SSO URL
+            String ssoUrl = context.getRelyingPartyRegistration().getAssertingPartyDetails().getSingleSignOnServiceLocation();
+
+            // Append login_hint parameter
+            StringBuilder urlBuilder = new StringBuilder(ssoUrl);
+            if (ssoUrl.contains("?")) {
+                urlBuilder.append("&login_hint=").append(HARDCODED_EMAIL);
+            } else {
+                urlBuilder.append("?login_hint=").append(HARDCODED_EMAIL);
+            }
+
+            // Append SAML parameters
+            for (Map.Entry<String, String> entry : parameters.entrySet()) {
+                urlBuilder.append("&").append(entry.getKey()).append("=").append(entry.getValue());
+            }
+
+            return urlBuilder.toString();
+        }
+
+        private String buildPostFormData(Map<String, String> parameters) {
+            // For POST binding, return serialized form data
+            // In a real implementation, this would create a form with hidden fields
+            return "post_form_data_placeholder";
+        }
+    }
+}

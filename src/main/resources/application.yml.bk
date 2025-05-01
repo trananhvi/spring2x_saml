@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /sample-sp
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.springframework.security.saml: INFO
+    org.opensaml.xmlsec: TRACE
+
+spring:
+  security:
+    saml2:
+      relyingparty:
+        registration:
+          samlexample:
+            signing:
+              credentials:
+                - private-key-location: "classpath:credentials/private.key"
+                  certificate-location: "classpath:credentials/public.cer"
+            identityprovider:
+              singlesignon:
+                sign-request: true
+              entity-id: http://www.okta.com/exkobvb50io3pyNd05d7
+              sso-url: https://dev-82990638.okta.com/app/dev-82990638_springbootsaml_1/exkobvb50io3pyNd05d7/sso/saml
+              metadata-uri: https://dev-82990638.okta.com/app/exkobvb50io3pyNd05d7/sso/saml/metadata
+              verification.credentials:
+                certificate-location: "classpath:credentials/okta.crt"

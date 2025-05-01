@@ -1,0 +1,108 @@
+package example;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.saml2.provider.service.metadata.OpenSamlMetadataResolver;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
+import org.springframework.security.saml2.provider.service.servlet.filter.Saml2WebSsoAuthenticationFilter;
+import org.springframework.security.saml2.provider.service.web.DefaultRelyingPartyRegistrationResolver;
+import org.springframework.security.saml2.provider.service.web.Saml2MetadataFilter;
+import org.springframework.security.saml2.provider.service.authentication.OpenSamlAuthenticationRequestFactory;
+import org.springframework.security.web.SecurityFilterChain;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.opensaml.saml.saml2.core.AuthnRequest;
+import org.opensaml.saml.saml2.core.Extensions;
+import org.opensaml.saml.saml2.core.impl.ExtensionsBuilder;
+import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
+import org.opensaml.core.xml.schema.XSString;
+import org.opensaml.core.xml.schema.impl.XSStringBuilder;
+import javax.xml.namespace.QName;
+
+import static org.springframework.security.config.Customizer.withDefaults;
+
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    RelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
+
+    private static final String HARDCODED_EMAIL = "hardcoded.user@example.com";
+
+    /**
+     * Override the default OpenSamlAuthenticationRequestFactory with our custom implementation
+     * Spring Security 5.7 will automatically pick up this bean
+     */
+    @Bean
+    public OpenSamlAuthenticationRequestFactory samlAuthenticationRequestFactory() {
+        return new OktaLoginHintAuthenticationRequestFactory();
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        // This will enable the metadata endpoint
+        Converter<HttpServletRequest, RelyingPartyRegistration> relyingPartyRegistrationResolver =
+                new DefaultRelyingPartyRegistrationResolver(this.relyingPartyRegistrationRepository);
+
+        Saml2MetadataFilter filter = new Saml2MetadataFilter(
+                relyingPartyRegistrationResolver,
+                new OpenSamlMetadataResolver());
+
+        http
+                .saml2Login(withDefaults())
+                .addFilterBefore(filter, Saml2WebSsoAuthenticationFilter.class)
+                .antMatcher("/**")
+                .authorizeRequests()
+                .antMatchers("/**").authenticated();
+    }
+
+    // Custom Authentication Request Factory that adds login_hint
+    public class OktaLoginHintAuthenticationRequestFactory extends OpenSamlAuthenticationRequestFactory {
+
+        @Override
+        public AuthnRequest createAuthnRequest(org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticationRequestContext context) {
+            // Get the original AuthnRequest
+            AuthnRequest authnRequest = super.createAuthnRequest(context);
+
+            try {
+                // Modify destination to include login_hint query parameter
+                String destination = authnRequest.getDestination();
+                if (destination != null) {
+                    if (destination.contains("?")) {
+                        authnRequest.setDestination(destination + "&login_hint=" + HARDCODED_EMAIL);
+                    } else {
+                        authnRequest.setDestination(destination + "?login_hint=" + HARDCODED_EMAIL);
+                    }
+                }
+
+                // Add login_hint as extension element (backup approach)
+                if (authnRequest.getExtensions() == null) {
+                    ExtensionsBuilder extensionsBuilder = new ExtensionsBuilder();
+                    Extensions extensions = extensionsBuilder.buildObject();
+                    authnRequest.setExtensions(extensions);
+                }
+
+                // Create login_hint extension element with Okta's namespace
+                QName loginHintQName = new QName("http://schemas.okta.com/extensions/authnrequest", "loginHint", "okta");
+                XSStringBuilder stringBuilder = (XSStringBuilder) XMLObjectProviderRegistrySupport.getBuilderFactory()
+                        .getBuilder(XSString.TYPE_NAME);
+                XSString loginHint = stringBuilder.buildObject(loginHintQName, XSString.TYPE_NAME);
+                loginHint.setValue(HARDCODED_EMAIL);
+
+                // Add the extension to the AuthnRequest
+                authnRequest.getExtensions().getUnknownXMLObjects().add(loginHint);
+
+            } catch (Exception e) {
+                System.err.println("Error adding login_hint to SAML request: " + e.getMessage());
+            }
+
+            return authnRequest;
+        }
+    }
+}
