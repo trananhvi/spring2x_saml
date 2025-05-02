@@ -1,4 +1,4 @@
-package example;
+package com.verint.springsaml.authenticator;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

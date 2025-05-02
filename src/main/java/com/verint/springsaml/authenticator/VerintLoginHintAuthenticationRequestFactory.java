@@ -1,4 +1,4 @@
-package example;
+package com.verint.springsaml.authenticator;
 
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
 import org.opensaml.core.xml.schema.XSString;

@@ -1,4 +1,4 @@
-package example;
+package com.verint.springsaml.authenticator;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +14,7 @@ import org.springframework.security.saml2.provider.service.servlet.filter.Saml2W
 import org.springframework.security.saml2.provider.service.web.DefaultRelyingPartyRegistrationResolver;
 import org.springframework.security.saml2.provider.service.web.Saml2MetadataFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -38,7 +39,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         // Allow access to login and processing endpoints - without context path
         http
                 .authorizeRequests()
-                .antMatchers("/login", "/process-email", "/css/**", "/js/**").permitAll()
+                .antMatchers("/login", "/process-email", "success", "/css/**", "/js/**").permitAll()
                 .anyRequest().authenticated()
                 .and()
                 .csrf()
@@ -49,7 +50,16 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .exceptionHandling()
                 .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login"));
 
-        // Configure SAML2 login using default configuration
-        http.saml2Login(Customizer.withDefaults());
+        //set success handler
+        http.saml2Login(saml2 -> saml2
+                .successHandler(successHandler())
+        );
+    }
+
+    @Bean
+    public SavedRequestAwareAuthenticationSuccessHandler successHandler() {
+        SavedRequestAwareAuthenticationSuccessHandler successHandler = new SavedRequestAwareAuthenticationSuccessHandler();
+        successHandler.setDefaultTargetUrl("/success");
+        return successHandler;
     }
 }

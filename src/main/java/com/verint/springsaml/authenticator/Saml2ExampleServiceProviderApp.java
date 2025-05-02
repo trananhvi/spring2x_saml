@@ -1,4 +1,4 @@
-package example;
+package com.verint.springsaml.authenticator;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
