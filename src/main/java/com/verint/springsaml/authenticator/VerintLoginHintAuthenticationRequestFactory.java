@@ -135,7 +135,7 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
 
                 // Add the extension to the AuthnRequest
                 authnRequest.getExtensions().getUnknownXMLObjects().add(loginHint);
-
+/*
                 // Add login_hint as Subject NameID (for Auth0 and other IdPs)
                 if (authnRequest.getSubject() == null) {
                     // Create a Subject if it doesn't exist
@@ -166,7 +166,7 @@ public class VerintLoginHintAuthenticationRequestFactory extends OpenSamlAuthent
                         authnRequest.getSubject().getNameID().setFormat(NameIDType.EMAIL);
                     }
                 }
-
+*/
                 // Modify destination to include login_hint query parameter
                 String destination = authnRequest.getDestination();
                 if (destination != null) {

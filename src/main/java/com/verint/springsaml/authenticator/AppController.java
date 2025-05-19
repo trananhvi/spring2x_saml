@@ -30,10 +30,10 @@ public class AppController {
         // Store the email in the session
         session.setAttribute("login_hint_email", email);
         // Redirect to the SAML SP initiation URL
-        return new RedirectView("/sample-sp/saml2/authenticate/v2");
+        return new RedirectView("/wfo/saml2/authenticate/azure");
     }
 
-    @GetMapping("success")
+    @GetMapping("/success")
     public String success(Model model) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof Saml2Authentication) {
