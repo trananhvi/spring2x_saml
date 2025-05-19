@@ -43,11 +43,7 @@ publishing {
         }
     }
 }
-// Package as a WAR file
-war {
-    enabled = true
-    archiveFileName = 'spring_saml_authenticator.war'
-}
+
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
